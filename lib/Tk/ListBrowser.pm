@@ -48,7 +48,7 @@ of options to set the presentation of text items.
 
 Scrollbars are automatically shown when needed.
 
-Screenshots: L<https://github.com/haje61/Tk-ListBrowser/screenshots>
+Screenshots: L<https://github.com/haje61/Tk-ListBrowser/tree/main/screenshots>
 
 =head1 OPTIONS
 
