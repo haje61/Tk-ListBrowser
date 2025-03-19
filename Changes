@@ -1,6 +1,9 @@
 Revision history for Perl extension Tk::ListBrowser.
 
 0.02  Wed Mar 19 2025
+	- Deactivated experiment in test file.
+
+0.02  Wed Mar 19 2025
 	- Corrected pod.
 	- Added option -filterfield.
 	- Fixed mouse wheel scrolling.

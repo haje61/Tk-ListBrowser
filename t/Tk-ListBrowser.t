@@ -4,7 +4,7 @@ use Test::More tests => 51;
 use Test::Tk;
 require Tk::Photo;
 require Tk::LabFrame;
-use Tk::DynaMouseWheelBind;
+#use Tk::DynaMouseWheelBind;
 use Tk::PNG;
 
 BEGIN {
@@ -36,7 +36,7 @@ my $item;
 my $image;
 my $handler;
 if (defined $app) {
-	$app->DynaMouseWheelBind('Tk::ListBrowser::LBCanvas');
+#	$app->DynaMouseWheelBind('Tk::ListBrowser::LBCanvas');
 	$image = $app->Photo(
 		-file => "t/icons/edit-cut.png",
 		-format => 'png',
