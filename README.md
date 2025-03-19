@@ -25,5 +25,7 @@ For visual inspection before install you can do:
 
     perl -Mblib t/Tk-ListBrowser.t show
 
+This also provides a nice demo program.
+
 
 
