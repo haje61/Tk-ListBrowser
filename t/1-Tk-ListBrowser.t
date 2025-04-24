@@ -1,6 +1,6 @@
 use strict;
 use warnings;
-use Test::More tests => 51;
+use Test::More tests => 55;
 use Test::Tk;
 require Tk::Photo;
 require Tk::LabFrame;
@@ -8,13 +8,16 @@ require Tk::LabFrame;
 use Tk::PNG;
 
 BEGIN {
-	use_ok('Tk::ListBrowser::LBCanvas');
+	use_ok('Tk::ListBrowser');
 	use_ok('Tk::ListBrowser::Bar');
+	use_ok('Tk::ListBrowser::BaseItem');
 	use_ok('Tk::ListBrowser::Column');
 	use_ok('Tk::ListBrowser::Item');
+	use_ok('Tk::ListBrowser::LBCanvas');
+	use_ok('Tk::ListBrowser::LBHeader');
 	use_ok('Tk::ListBrowser::List');
 	use_ok('Tk::ListBrowser::Row');
-	use_ok('Tk::ListBrowser');
+	use_ok('Tk::ListBrowser::SideColumn');
 };
 
 createapp;
@@ -220,6 +223,7 @@ if (defined $app) {
 	$app->geometry('500x800+200+200');
 }
 
+testaccessors($ib, qw/header/);
 testaccessors($item, qw/cimage crect column ctext data hidden image row text/);
 testaccessors($handler, qw/cellHeight cellImageHeight cellImageWidth cellTextHeight cellTextWidth cellWidth/);
 

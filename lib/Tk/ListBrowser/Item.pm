@@ -11,7 +11,9 @@ use warnings;
 use vars qw ($VERSION);
 use Carp;
 
-$VERSION =  0.01;
+$VERSION =  0.04;
+
+use base qw(Tk::ListBrowser::BaseItem);
 
 =head1 SYNOPSIS
 
@@ -33,39 +35,14 @@ You will never need to create an item object yourself.
 sub new {
 	my $class = shift;
 	
-	my %args = @_;
+	my $self = $class->SUPER::new(@_);
 
-	my $canv = delete $args{'-canvas'};
-	croak 'You did not specify a canvas' unless defined $canv;
-
-	my $data = delete $args{'-data'};
-
-	my $hidden = delete $args{'-hidden'};
-	$hidden = 0 unless defined $hidden;
-
-	my $image = delete $args{'-image'};
-
-	my $name = delete $args{'-name'};
-	croak 'You did not specify an name' unless defined $name;
-
-	my $text = delete $args{'-text'};
-	$text = '' unless defined $text;
+	$self->hidden(0) unless defined $self->hidden;
+	$self->owner($self->canvas) unless defined $self->owner;
+	$self->text('') unless defined $self->text;
+	$self->{ANCHOR} = 0;
+	$self->{SELECTED} = 0;
 	
-	my $self = {
-		ANCHOR => 0,
-		CANVAS => $canv,
-		COLUMN => undef,
-		DATA => $data,
-		HIDDEN => $hidden,
-		IMAGE => $image,
-		NAME => $name,
-		REGION => [0, 0, 0, 0],
-		ROW => undef,
-		SELECTED => 0,
-		TEXT => $text,
-		TFILL => undef,
-	};
-	bless $self, $class;
 	return $self
 }
 
@@ -97,6 +74,7 @@ sub anchor {
 			-dash => undef,
 		);
 	}
+	return $self->{ANCHOR}
 }
 
 =item B<anchored>
@@ -171,6 +149,129 @@ sub data {
 	return $self->{DATA}
 }
 
+sub draw {
+	my ($self, $x, $y, $column, $row, $type) = @_;
+
+	my $image = $self->image;
+	my $ih = 0;
+	my $iw = 0;
+	if (defined $image) {
+		$ih = $image->height;
+		$iw = $image->width;
+	}
+
+	my $text = $self->text;
+	my $th = 0;
+	my $tw = 0;
+	if (defined $text) {
+		$text = $self->textFormat($text);
+		$th = $self->textHeight($text);
+		$tw = $self->textWidth($text);
+	}
+
+	my $imageoffsetx = 0;
+	my $imageoffsety = 0;
+	my $textoffsetx = 0;
+	my $textoffsety = 0;
+	my @textcavity = (0, 0, 0, 0);
+
+	my $owner = $self->owner;
+	my $cellheight = $owner->cellHeight;
+	my $cellwidth = $owner->cellWidth;
+	my $imageheight = $owner->cellImageHeight;
+	my $imagewidth = $owner->cellImageWidth;
+	my $textheight = $owner->cellTextHeight;
+	my $textwidth = $owner->cellTextWidth;
+
+	my $itemtype = $owner->cget('-itemtype');
+	if ($itemtype eq 'image') {
+		$imageoffsetx = int(($cellwidth - $iw)/2);
+		$imageoffsety = int(($cellheight - $ih)/2);
+	} elsif ($itemtype eq 'text') {
+		@textcavity = (0 ,0, $cellwidth, $cellheight)
+	} else {
+		my $textside = $owner->cget('-textside');
+		if ($textside eq 'top') {
+			@textcavity = (0, 0, $cellwidth, $textheight);
+			$imageoffsety = $textheight + int(($imageheight - $ih)/2);
+			$imageoffsetx = $imageoffsetx + int(($cellwidth - $iw)/2);
+		} elsif ($textside eq 'bottom') {
+			@textcavity = (0, $imageheight, $cellwidth, $cellheight);
+			$imageoffsetx = $imageoffsetx + int(($cellwidth - $iw)/2);
+			$imageoffsety = $imageoffsety + int(($imageheight - $ih)/2);
+		} elsif ($textside eq 'left') {
+			@textcavity = (0, 0, $textwidth, $cellheight);
+			$imageoffsety = $imageoffsety + int(($cellheight - $ih)/2);
+			$imageoffsetx = $textwidth;
+		} elsif ($textside eq 'right') {
+			@textcavity = ($imagewidth, 0, $cellwidth, $cellheight);
+			$imageoffsety = $imageoffsety + int(($cellheight - $ih)/2);
+		}
+	}
+
+	my $centerx = $textcavity[0] + int(($textcavity[2] - $textcavity[0] - $tw)/2);
+	my $centery = $textcavity[1] + int(($textcavity[3] - $textcavity[1] - $th)/2);
+
+	my $textanchor = $owner->cget('-textanchor');
+	if ($textanchor eq '') {
+		$textoffsetx = $centerx;
+		$textoffsety = $centery;
+	} elsif ($textanchor eq 's') {
+		$textoffsetx = $centerx;
+		$textoffsety = $textcavity[3] - $th;
+	} elsif ($textanchor eq 'e') {
+		$textoffsetx = $textcavity[2] - $tw;
+		$textoffsety = $centery;
+	} elsif ($textanchor eq 'n') {
+		$textoffsetx = $centerx;
+		$textoffsety = $textcavity[1];
+	} elsif ($textanchor eq 'w') {
+		$textoffsetx = $textcavity[0];
+		$textoffsety = $centery;
+	} elsif ($textanchor eq 'se') {
+		$textoffsetx = $textcavity[2] - $tw;
+		$textoffsety = $textcavity[3] - $th;
+	} elsif ($textanchor eq 'sw') {
+		$textoffsetx = $textcavity[0];
+		$textoffsety = $textcavity[3] - $th;
+	} elsif ($textanchor eq 'ne') {
+		$textoffsetx = $textcavity[2] - $tw;
+		$textoffsety = $textcavity[1];
+	} elsif ($textanchor eq 'nw') {
+		$textoffsetx = $textcavity[0];
+		$textoffsety = $textcavity[1];
+	}
+
+	if ($type =~ /image/) {
+		my $itag;
+		$itag = $self->createImage($x + $imageoffsetx, $y + $imageoffsety, 
+			-image => $image, 
+			-anchor => 'nw',
+		) if defined $image;
+		$self->cimage($itag);
+	}
+	if ($type =~ /text/) {
+		my $ttag;
+		$ttag = $self->createText($x + $textoffsetx, $y + $textoffsety, 
+			-text => $text,
+			-justify => $self->canvas->cget('-textjustify'),
+			-anchor => 'nw',
+			-font => $self->canvas->cget('-font'),
+		) if defined $text;
+		$self->ctext($ttag);
+	}
+	my $dx = $x + $cellwidth;
+	my $dy = $y + $cellheight;
+	my $rtag = $self->createRectangle($x, $y, $dx, $dy,
+		-fill => undef,
+		-outline => undef,
+	);
+	$self->crect($rtag);
+	$self->region($x, $y, $dx, $dy);
+	$self->column($column);
+	$self->row($row);
+}
+
 =item B<hidden>I<(?$flag?)>
 
 Sets and returns the hidden flag belonging to this entry.
@@ -212,6 +313,35 @@ sub inregion {
 	return 1
 }
 
+sub minCellSize {
+	my ($self, $itemtype) = @_;
+	$itemtype = 'imagetext' unless defined $itemtype;
+	my $cellheight = 0;
+	my $cellwidth = 0;;
+	my $imageheight = 0;
+	my $imagewidth = 0;
+	my $textheight = 0;
+	my $textwidth = 0;
+	my $image = $self->image;
+	if (defined $image) {
+		$imageheight = $image->height;
+		$imagewidth = $image->width;
+	}
+	my $text = $self->text;
+	if (defined $text) {
+		$text = $self->textFormat($text);
+		$textheight = $self->textHeight($text);
+		$textwidth = $self->textWidth($text);
+	}
+	my $pad = 6;
+	$pad = 4 if $itemtype ne 'imagetext';
+	$imageheight = $imageheight + $pad;
+	$imagewidth = $imagewidth + $pad;
+	$textheight = $textheight + $pad;
+	$textwidth = $textwidth + $pad;
+	return ($imagewidth, $imageheight, $textwidth, $textheight)
+}
+
 =item B<name>
 
 Sets and returns name of this entry.
@@ -219,6 +349,17 @@ Sets and returns name of this entry.
 =cut
 
 sub name { return $_[0]->{NAME} }
+
+=item B<owner>I<(?$owner?)>
+
+=cut
+
+sub owner {
+	my $self = shift;
+	$self->{OWNER} = shift if @_;
+	return $self->{OWNER}
+}
+
 
 sub region {
 	my $self = shift;

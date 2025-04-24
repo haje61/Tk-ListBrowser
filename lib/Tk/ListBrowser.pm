@@ -10,17 +10,19 @@ use strict;
 use warnings;
 use Carp;
 use vars qw($VERSION);
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 use base qw(Tk::Derived Tk::Frame);
 
 Construct Tk::Widget 'ListBrowser';
 
 use Math::Round;
-use Tie::Watch;
 use Tk;
+require Tk::Pane;
 require Tk::ListBrowser::Item;
 require Tk::ListBrowser::LBCanvas;
+require Tk::ListBrowser::LBHeader;
+require Tk::ListBrowser::SideColumn;
 
 #used in formatText
 my $dlmreg = qr/\.|\(|\)|\:|\!|\+|\,|\-|\<|\=|\>|\%|\&|\*|\"|\'|\/|\;|\?|\[|\]|\^|\{|\||\}|\~|\\|\$|\@|\#|\`|\s/;
@@ -31,6 +33,11 @@ my %handlers = (
 	column => 'Column',
 	list => 'List',
 	row => 'Row',
+);
+my %columnCapable = (
+	list => 1,
+	hlist => 1,
+	tree => 1,
 );
 
 =head1 SYNOPSIS
@@ -183,14 +190,31 @@ sub Populate {
 	
 	$self->SUPER::Populate($args);
 	
+	#create the canvas
 	my $canv = $self->Scrolled('LBCanvas',
 		-keycall => ['KeyPress', $self],
 		-scrollbars => 'osoe',
 	)->pack(-expand => 1, -fill => 'both');
 	my $c = $canv->Subwidget('scrolled');
-	$c->configure(-takefocus => 1);
+	$c->configure(
+		-takefocus => 1,
+	);
+
+	#horizontal scroll for headers
+	my $xscroll = $canv->Subwidget('xscrollbar');
+	my $call = $xscroll->cget('-command');
+	$xscroll->configure(
+		-command => sub {
+			$call->Call(@_);
+			$self->headerScroll;
+		}
+	);
+
 	$self->Advertise('Canvas', $c);
-	$self->bind('<Configure>', [ $self, 'refresh' ]);
+	
+	#create the header frame;
+	my $hf = $c->Pane(-sticky => 'ew');
+	$self->Advertise('HeaderFrame', $hf);
 
 	#mouse bindings
 	$c->Tk::bind('<Button-1>', [ $self, 'Button1', Ev('x'), Ev('y') ]);
@@ -220,10 +244,13 @@ sub Populate {
 	}
 
 	$self->{ARRANGE} = undef;
+	$self->{COLUMNS} = [];
 	$self->{HANDLER} = undef;
 	$self->{POOL} = [];
 	$self->{ROWS} = 0;
 	$self->{WRAPLENGTH} = 0;
+
+	$self->bind('<Configure>', [ $self, 'OnConfigure' ]);
 
 	$self->ConfigSpecs(
 		-arrange => ['METHOD', undef, undef, 'row'],
@@ -234,7 +261,8 @@ sub Populate {
 		-filterfield => ['PASSIVE', undef, undef, 'name'],
 		-filteron => ['PASSIVE', undef, undef, ''],
 		-font => ['PASSIVE', 'font', 'Font', 'Monotype 10'],
-		-foreground => ['PASSIVE', 'foreground', 'foreground', '#3C3C3C'],
+		-foreground => ['PASSIVE', 'foreground', 'Foreground', '#3C3C3C'],
+		-headerheight => ['PASSIVE', 'headerHeight', 'HeaderHeight', 35],
 		-itemtype => ['PASSIVE', undef, undef, 'imagetext'],
 		-motionselect => ['PASSIVE', undef, undef, ''],
 		-selectbackground => ['PASSIVE', 'selectBackground', 'SelectBackground', '#A0A0FF'],
@@ -535,6 +563,49 @@ sub canvasSize {
 	return ($c->width - $offset, $c->height - $offset);
 }
 
+sub cellHeight {
+	my $self = shift;
+	$self->{CELLHEIGHT} = shift if @_;
+	return $self->{CELLHEIGHT}
+}
+
+sub cellImageHeight {
+	my $self = shift;
+	$self->{IMAGEHEIGHT} = shift if @_;
+	return $self->{IMAGEHEIGHT}
+}
+
+sub cellImageWidth {
+	my $self = shift;
+	$self->{IMAGEWIDTH} = shift if @_;
+	return $self->{IMAGEWIDTH}
+}
+
+sub cellTextHeight {
+	my $self = shift;
+	$self->{TEXTHEIGHT} = shift if @_;
+	return $self->{TEXTHEIGHT}
+}
+
+sub cellTextWidth {
+	my $self = shift;
+	$self->{TEXTWIDTH} = shift if @_;
+	return $self->{TEXTWIDTH}
+}
+
+
+sub cellWidth {
+	my $self = shift;
+	$self->{CELLWIDTH} = shift if @_;
+	return $self->{CELLWIDTH}
+}
+
+sub cheader{
+	my $self = shift;
+	$self->{CHEADER} = shift if @_;
+	return $self->{CHEADER}
+}
+
 =item B<clear>
 
 Clears the canvas.
@@ -549,11 +620,158 @@ sub clear {
 
 	my $pool = $self->pool;
 	grep { $_->clear } @$pool;
-
 	my $c = $self->Subwidget('Canvas');
+	$self->Subwidget('HeaderFrame')->packForget;
+	$self->cheader(undef);
+	my @columns = $self->columnList;
+	for (@columns) {
+		$self->columnGet($_)->clear;
+	}
+
 	$c->xview(moveto => 0);
 	$c->yview(moveto => 0);
 	$c->configure(-scrollregion => [0, 0, 0, 0]);
+}
+
+sub columnCapable {
+	my $self = shift;
+	return exists $columnCapable{$self->cget('-arrange')}
+}
+
+=item B<columnCget>
+
+=cut
+
+sub columnCget {
+	my ($self, $name, $option) = @_;
+	my $col = $self->columnGet($name);
+	unless (defined $col) {
+		croak "Column '$name' not found";
+		return
+	}
+	return $col->cget($option)
+}
+
+=item B<columnConfigure>
+
+=cut
+
+sub columnConfigure {
+	my ($self, $name, %options) = @_;
+	my $col = $self->columnGet($name);
+	unless (defined $col) {
+		croak "Column '$name' not found";
+		return
+	}
+	for (keys %options) {
+		$col->configure($_, $options{$_})
+	}
+}
+
+=item B<columnCreate>
+
+=cut
+
+sub columnCreate {
+	my ($self, $name, %options) = @_;
+
+	my $arrange = $self->cget('-arrange');
+	unless (exists $columnCapable{$arrange}) {
+		warn "Cannot create column in '$arrange' mode.";
+		return
+	}
+	if ($self->columnExists($name)) {
+		croak "Column '$name' already exists";
+		return
+	}
+
+	my $after = delete $options{'-after'};
+	my $before = delete $options{'-before'};
+	my $item = new Tk::ListBrowser::SideColumn(
+		%options,
+		-canvas => $self,
+		-name => $name,
+	);
+	my $columns = $self->{COLUMNS};
+	if (defined $after) {
+		my $index = $self->columnIndex($after);
+		splice(@$columns, $index + 1, 0, $item) if defined $index;
+		croak "Column for -after '$after' not found" unless defined $index;
+	} elsif (defined $before) {
+		my $index = $self->columnIndex($before);
+		splice(@$columns, $index, 0, $item) if defined $index;
+		croak "Column for -before '$before' not found" unless defined $index;
+	} else {
+		push @$columns, $item
+	}
+	return $item
+}
+
+=item B<columnExists>
+
+=cut
+
+sub columnExists {
+	my ($self, $name) = @_;
+	my $columns = $self->{COLUMNS};
+	my @hit = grep { $_->name eq $name } @$columns;
+	return defined $hit[0]
+}
+
+=item B<columnGet>
+
+=cut
+
+sub columnGet {
+	my ($self, $name) = @_;
+	my $columns = $self->{COLUMNS};
+	my @hit = grep { $_->name eq $name } @$columns;
+	croak "Column '$name' not found" unless @hit;
+	return $hit[0]
+}
+
+=item B<columnIndex>
+
+=cut
+
+sub columnIndex {
+	my ($self, $name) = @_;
+	my $columns = $self->{COLUMNS};
+	my ($index) = grep { $columns->[$_]->name eq $name } 0 .. @$columns - 1;
+	return $index
+}
+
+=item B<columnList>
+
+=cut
+
+sub columnList {
+	my $self = shift;
+	my $columns = $self->{COLUMNS};
+	my @l;
+	for (@$columns) {
+		push @l, $_->name
+	}
+	return @l
+}
+
+=item B<columnRemove>
+
+=cut
+
+sub columnRemove {
+	my ($self, $name) = @_;
+	my $columns = $self->{COLUMNS};
+	my $index = $self->columnIndex($name);
+	if (defined $index) {
+		my ($del) = splice(@$columns, $index, 1);
+		$del->clear;
+		return
+	}
+	croak "Column '$name' not found"
+}
+
+sub columnWidth {
 }
 
 =item B<delete>I<(?$name?)>
@@ -587,13 +805,6 @@ sub deleteAll {
 	$self->clear;
 }
 
-my %validconfigs = (
-	-data => 1,
-	-hidden => 1,
-	-image => 1,
-	-text => 1
-);
-
 =item B<entryCget>I<($name, $option)>
 
 Returns the value of I<$option> held by $name. Valid
@@ -608,12 +819,7 @@ sub entryCget {
 		croak "Entry '$name' not found";
 		return
 	}
-	unless (exists $validconfigs{$option}) {
-		croak "Invalid option '$option'";
-		return
-	}
-	$option =~ s/^\-//;
-	return $i->$option
+	return $i->cget($option)
 }
 
 =item B<entryConfigure>I<($name, %options)>
@@ -625,22 +831,14 @@ You can specify multiple options.
 =cut
 
 sub entryConfigure {
-	my $self = shift;
-	my $name = shift;
+	my ($self, $name, %options) = @_;
 	my $i = $self->get($name);
 	unless (defined $i) {
 		croak "Entry '$name' not found";
 		return
 	}
-	while (@_) {
-		my $option = shift;
-		my $value = shift;
-		unless (exists $validconfigs{$option}) {
-			croak "Invalid option '$option'";
-			return
-		}
-		$option =~ s/^\-//;
-		$i->$option($value)
+	for (keys %options) {
+		$i->configure($_, $options{$_})
 	}
 }
 
@@ -777,6 +975,168 @@ sub getRow {
 	my $pool = $self->pool;
 	my @hits = grep { (defined $_->row ) and ($_->row eq $row) } @$pool;
 	return @hits
+}
+
+sub header {
+	my $self = shift;
+	$self->{HEADER} = shift if @_;
+	return $self->{HEADER}
+}
+
+
+=item B<headerAvailable>
+
+=cut
+
+sub headerAvailable {
+	my $self = shift;
+	return 1 if defined $self->header;
+	my @columns = $self->columnList;
+	for (@columns) {
+		return 1 if defined $self->headerGet($_)
+	}
+	return ''
+}
+
+=item B<headerCget>I<($column, $option)>
+
+=cut
+
+sub headerCget {
+	my ($self, $col, $option) = @_;
+	my $h;
+	if ($col eq '') {
+		$h = $self->header
+	} else {
+		my $c = $self->columnGet($col);
+		$h = $c->header
+	}
+	return $h->cget($option) if defined $h
+}
+
+=item B<headerConfigure>I<($column, $option, $value)>
+
+=cut
+
+sub headerConfigure {
+	my ($self, $col, $option, $value) = @_;
+	my $h;
+	if ($col eq '') {
+		$h = $self->header
+	} else {
+		my $c = $self->columnGet($col);
+		$h = $c->header
+	}
+	$h->configure($option, $value) if defined $h
+}
+
+=item B<headerCreate>I<($column, $option)>
+
+=cut
+
+sub headerCreate {
+	my ($self, $col, %options) = @_;
+	my $c = $self->Subwidget('Canvas');
+	my $h = $c->LBHeader(
+		-relief => 'raised',
+		-borderwidth => 2,
+		-listbrowser => $self,
+		-column => $col,
+		%options,
+	);
+	if ($col eq '') {
+		$self->header($h)
+	} else {
+		my $c = $self->columnGet($col);
+		$c->header($h) if defined $c
+	}
+}
+
+=item B<headerExists>I<($column)>
+
+=cut
+
+sub headerExists {
+	my ($self, $col) = @_;
+	return defined $self->headerGet($col)
+}
+
+=item B<headerGet>I<($column, $option)>
+
+=cut
+
+sub headerGet {
+	my ($self, $col) = @_;
+	my $h;
+	if ($col eq '') {
+		$h = $self->header
+	} else {
+		my $c = $self->columnGet($col);
+		$h = $c->header if defined $c
+	}
+	return $h
+}
+
+sub headerPlace {
+	my $self = shift;
+
+	my $x = $self->headerPos;
+	my $hheight = $self->cget('-headerheight');
+	my $hf = $self->Subwidget('HeaderFrame');
+	$hf->configure(-height => $hheight);
+	if (my $h = $self->headerGet('')) {
+		$h->place(-x => $x, -y => 0, -height => $hheight, -width => $self->cellWidth);
+	}
+	$x = $x + $self->cellWidth + 1;
+	my @columns = $self->columnList;
+	for (@columns) {
+		my $col = $self->columnGet($_);
+		if (my $h = $self->headerGet($_)) {
+			$h->place(-x => $x, -y => 0, -height => $hheight, -width => $col->cellWidth);
+		}
+		$x = $x + $col->cellWidth + 1;
+	}
+}
+
+sub headerPos {
+	my $self = shift;
+	$self->{HEADERPOS} = shift if @_;
+	return $self->{HEADERPOS}
+}
+
+=item B<headerRemove>I<($column, $option)>
+
+=cut
+
+sub headerRemove {
+	my ($self, $col) = @_;
+	my $h;
+	if ($col eq '') {
+		$h = $self->header;
+		$self->header(undef);
+	} else {
+		my $c = $self->columnGet($col);
+		if (defined $c) {
+			$h = $c->header;
+			$c->header(undef)
+		}
+	}
+	$h->destroy if defined $h;
+}
+
+sub headerScroll {
+	my $self = shift;
+	return unless $self->columnCapable;
+	return unless $self->headerAvailable;
+	my $width = $self->cellWidth;
+	my @columns = $self->columnList;
+	for (@columns) {
+		my $col = $self->columnGet($_);
+		$width = $width + $col->cellWidth;
+	}
+	my ($fract) = $self->Subwidget('Canvas')->xview;
+	$self->headerPos(-($width * $fract));
+	$self->headerPlace;
 }
 
 =item B<hide>I<($name)>
@@ -1059,6 +1419,76 @@ sub initem {
 		}
 	}
 	return undef
+}
+
+=item B<itemCget>
+
+=cut
+
+sub itemCget {
+	my ($self, $entry, $column, $option) = @_;
+	my $i = $self->itemGet($entry, $column);
+	if (defined $i) {
+		return $i->cget($option)
+	}
+}
+
+=item B<itemConfigure>
+
+=cut
+
+sub itemConfigure {
+	my ($self, $entry, $column, %options) = @_;
+	my $i = $self->itemGet($entry, $column);
+	if (defined $i) {
+		$i->configure(%options)
+	}
+}
+
+=item B<itemCreate>
+
+=cut
+
+sub itemCreate {
+	my ($self, $entry, $column, %options) = @_;
+	my $col = $self->columnGet($column);
+	my $item = new Tk::ListBrowser::Item(
+		%options,
+		-canvas => $self,
+		-name => '',
+		-owner => $col,
+	);
+	$col->itemAdd($entry, $item)
+}
+
+=item B<itemExists>
+
+=cut
+
+sub itemExists {
+	my ($self, $entry, $column) = @_;
+	my $col = $self->columnGet($column);
+	return $col->itemExists($entry)
+}
+
+=item B<itemGet>
+
+=cut
+
+sub itemGet {
+	my ($self, $entry, $column) = @_;
+	my $col = $self->columnGet($column);
+	return $col->itemGet($entry)
+}
+
+=item B<itemRemove>
+
+=cut
+
+sub itemRemove {
+	my ($self, $entry, $column) = @_;
+	my $col = $self->columnGet($column);
+	$col->itemRemove($entry)
 }
 
 sub KeyArrowNavig {
@@ -1359,13 +1789,35 @@ sub moveRow {
 	return $target;
 }
 
-sub pool { return $_[0]->{POOL} }
+sub OnConfigure {
+	my ($self, $timer) = @_;
+	if (my $id = $self->{'timer_id'}) {
+		$self->afterCancel($id);
+		my $nid = $self->after(50, ['OnConfigureTimer', $self]);
+		$self->{'timer_id'} = $nid;
+	}
+	unless (defined $timer) {
+		my $id = $self->after(50, ['OnConfigureTimer', $self]);
+		$self->{'timer_id'} = $id;
+		return
+	}
 
-sub refreshTimer {
+	#need to refresh if arrange is column or row
+	my $arrange = $self->cget('-arrange');
+	my %a = (qw/column 1 row 1/);
+	$self->refresh if exists $a{$arrange};
+
+	#redraw headers
+	$self->headerScroll;
+}
+
+sub OnConfigureTimer {
 	my $self = shift;
 	delete $self->{'timer_id'};
-	$self->refresh(1);
+	$self->OnConfigure(1);
 }
+
+sub pool { return $_[0]->{POOL} }
 
 =item B<refresh>
 
@@ -1374,18 +1826,17 @@ Clears the canvas and rebuilds it. Call this method after you are done making ch
 =cut
 
 sub refresh {
-	my ($self, $timer) = @_;
-	if (my $id = $self->{'timer_id'}) {
-		$self->afterCancel($id);
-		my $nid = $self->after(50, ['refreshTimer', $self]);
-		$self->{'timer_id'} = $nid;
-	}
-	unless (defined $timer) {
-		my $id = $self->after(50, ['refreshTimer', $self]);
-		$self->{'timer_id'} = $id;
-		return
-	}
+	my $self = shift;
+
+	my @sel = $self->selectionGet;
+	my $anch = $self->anchorGet;
+
 	$self->_handler->refresh;
+
+	for (@sel) {
+		$self->selectionSet($_)
+	}
+	$self->anchorSet($anch) if defined $anch;
 }
 
 =item B<see>I<($name)>
