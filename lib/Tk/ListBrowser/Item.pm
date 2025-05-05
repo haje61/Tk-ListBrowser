@@ -11,9 +11,12 @@ use warnings;
 use vars qw ($VERSION);
 use Carp;
 
-$VERSION =  0.04;
+$VERSION = 0.04;
 
 use base qw(Tk::ListBrowser::BaseItem);
+
+#used in formatText
+my $dlmreg = qr/\.|\(|\)|\:|\!|\+|\,|\-|\<|\=|\>|\%|\&|\*|\"|\'|\/|\;|\?|\[|\]|\^|\{|\||\}|\~|\\|\$|\@|\#|\`|\s/;
 
 =head1 SYNOPSIS
 
@@ -23,8 +26,13 @@ use base qw(Tk::ListBrowser::BaseItem);
 
 =head1 DESCRIPTION
 
+Inherits L<Tk::ListBrowser::BaseItem>.
+
 This module creates an object that holds all information of every entry.
 You will never need to create an item object yourself.
+
+Besides the options in it's parent, you can use the I<-data>, I<-image>,
+and I<-text> options.
 
 =head1 METHODS
 
@@ -37,55 +45,62 @@ sub new {
 	
 	my $self = $class->SUPER::new(@_);
 
+	$self->anchored(0);
 	$self->hidden(0) unless defined $self->hidden;
-	$self->owner($self->canvas) unless defined $self->owner;
-	$self->text('') unless defined $self->text;
+	$self->opened(1);
+	$self->owner($self->listbrowser) unless defined $self->owner;
 	$self->{ANCHOR} = 0;
 	$self->{SELECTED} = 0;
 	
 	return $self
 }
 
-=item B<anchor>I<($flag)>
-
-If I<$flag> is set it makes the anchor rectangle of this entry visible.
-Otherwise clears it.
-
-=cut
-
 sub anchor {
 	my ($self, $flag) = @_;
-	my $c = $self->canvas;
-	my $p = $c->Subwidget('Canvas');
+	my $c = $self->Subwidget('Canvas');
 	$flag = 1 unless defined $flag;
-	my $r = $self->crect;
 	$self->{ANCHOR} = $flag;
 	if ($flag) {
-		my $fg = $c->cget('-foreground');
-		$p->itemconfigure($r,
-			-outline => $fg, # TODO should not be a hard coded color.
+		my @coords;
+		my @region = $self->region;
+		if ($self->hierarchy) {
+			my $lb = $self->listbrowser;
+			my $sr = $lb->cget('-scrollregion');
+			@coords = ($lb->cget('-marginleft'), $region[1], $sr->[2], $region[3]);
+		} else {
+			@coords = @region;
+		}
+		my $a = $c->createRectangle(@coords,
+			-fill => undef,
 			-dash => [3, 2],
 		);
+		$self->canchor($a);
 	} else {
-		my $outline;
-		$outline = $c->cget('-selectbackground') if $self->selected;
-		$p->itemconfigure($r,
-			-outline => $outline,
-			-dash => undef,
-		);
+		my $a = $self->canchor;
+		$c->delete($a) if defined $a;
 	}
 	return $self->{ANCHOR}
 }
 
-=item B<anchored>
-
-Returns true if the anchor is set to this entry.
-
-=cut
-
 sub anchored { return $_[0]->{ANCHOR} }
 
-sub canvas { return $_[0]->{CANVAS} }
+sub canchor {
+	my $self = shift;
+	$self->{CANCHOR} = shift if @_;
+	return $self->{CANCHOR}
+}
+
+sub cguideH {
+	my $self = shift;
+	$self->{CGUIDEH} = shift if @_;
+	return $self->{CGUIDEH}
+}
+
+sub cguideV {
+	my $self = shift;
+	$self->{CGUIDEV} = shift if @_;
+	return $self->{CGUIDEV}
+}
 
 sub cimage {
 	my $self = shift;
@@ -93,31 +108,30 @@ sub cimage {
 	return $self->{CIMAGE}
 }
 
-=item B<clear>I<(?$flag?)>
-
-Clears all visible items (text, image, anchor, selection) on the canvas belonging to this item.
-
-=cut
+sub cindicator {
+	my $self = shift;
+	$self->{CINDICATOR} = shift if @_;
+	return $self->{CINDICATOR}
+}
 
 sub clear {
 	my $self = shift;
-	my $c = $self->canvas->Subwidget('Canvas');
-	for ($self->cimage, $self->ctext, $self->crect) {
+	my $c = $self->Subwidget('Canvas');
+	for ($self->canchor, $self->cimage, $self->ctext, $self->cguideH, $self->cguideV, $self->cindicator, $self->cselect) {
 		$c->delete($_) if defined $_;
 	}
-	$self->cimage(undef);
-	$self->ctext(undef);
-	$self->crect(undef);
 	$self->column(undef);
 	$self->row(undef);
-	$self->region(0, 0, 0, 0);
+
+	$self->canchor(undef);
+	$self->cguideH(undef);
+	$self->cguideV(undef);
+	$self->cimage(undef);
+	$self->ctext(undef);
+	$self->cindicator(undef);
+	$self->cselect(undef);
+	$self->SUPER::clear;
 }
-
-=item B<column>I<(?$column?)>
-
-Sets and returns the column number of this entry
-
-=cut
 
 sub column {
 	my $self = shift;
@@ -125,10 +139,10 @@ sub column {
 	return $self->{COLUMN}
 }
 
-sub crect {
+sub cselect {
 	my $self = shift;
-	$self->{CRECT} = shift if @_;
-	return $self->{CRECT}
+	$self->{CSELECT} = shift if @_;
+	return $self->{CSELECT}
 }
 
 sub ctext {
@@ -137,16 +151,40 @@ sub ctext {
 	return $self->{CTEXT}
 }
 
-=item B<data>I<(?$data?)>
-
-Sets and returns the data scalar assigned to this entry.
-
-=cut
-
 sub data {
 	my $self = shift;
 	$self->{DATA} = shift if @_;
 	return $self->{DATA}
+}
+
+sub deleteImage {
+	my $self = shift;
+	my $i = $self->cimage;
+	return unless defined $i;
+	
+	my $c = $self->Subwidget('Canvas');
+	$c->delete($i);
+	$self->cimage(undef);
+}
+
+sub deleteRect {
+	my $self = shift;
+	my $r = $self->crect;
+	return unless defined $r;
+	
+	my $c = $self->Subwidget('Canvas');
+	$c->delete($r);
+	$self->crect(undef);
+}
+
+sub deleteText {
+	my $self = shift;
+	my $t = $self->ctext;
+	return unless defined $t;
+	
+	my $c = $self->Subwidget('Canvas');
+	$c->delete($t);
+	$self->ctext(undef);
 }
 
 sub draw {
@@ -164,9 +202,10 @@ sub draw {
 	my $th = 0;
 	my $tw = 0;
 	if (defined $text) {
-		$text = $self->textFormat($text);
-		$th = $self->textHeight($text);
-		$tw = $self->textWidth($text);
+		my $textf = $self->textFormat($text);
+		$th = $self->textHeight($textf);
+		$tw = $self->textWidth($textf);
+		$self->textFormatted($textf);
 	}
 
 	my $imageoffsetx = 0;
@@ -206,11 +245,16 @@ sub draw {
 		} elsif ($textside eq 'right') {
 			@textcavity = ($imagewidth, 0, $cellwidth, $cellheight);
 			$imageoffsety = $imageoffsety + int(($cellheight - $ih)/2);
+			$imageoffsetx = int(($imagewidth - $iw)/2);
 		}
 	}
 
 	my $centerx = $textcavity[0] + int(($textcavity[2] - $textcavity[0] - $tw)/2);
 	my $centery = $textcavity[1] + int(($textcavity[3] - $textcavity[1] - $th)/2);
+
+	my $lb = $self->listbrowser;
+	my $padx = $lb->cget('-itempadx');
+	my $pady = $lb->cget('-itempady');
 
 	my $textanchor = $owner->cget('-textanchor');
 	if ($textanchor eq '') {
@@ -218,65 +262,116 @@ sub draw {
 		$textoffsety = $centery;
 	} elsif ($textanchor eq 's') {
 		$textoffsetx = $centerx;
-		$textoffsety = $textcavity[3] - $th;
+		$textoffsety = $textcavity[3] - $th - $pady;
 	} elsif ($textanchor eq 'e') {
-		$textoffsetx = $textcavity[2] - $tw;
+		$textoffsetx = $textcavity[2] - $tw - $padx;
 		$textoffsety = $centery;
 	} elsif ($textanchor eq 'n') {
 		$textoffsetx = $centerx;
-		$textoffsety = $textcavity[1];
+		$textoffsety = $textcavity[1] + $pady;
 	} elsif ($textanchor eq 'w') {
-		$textoffsetx = $textcavity[0];
+		$textoffsetx = $textcavity[0] + $padx;
 		$textoffsety = $centery;
 	} elsif ($textanchor eq 'se') {
-		$textoffsetx = $textcavity[2] - $tw;
-		$textoffsety = $textcavity[3] - $th;
+		$textoffsetx = $textcavity[2] - $tw - $padx;
+		$textoffsety = $textcavity[3] - $th - $pady;
 	} elsif ($textanchor eq 'sw') {
-		$textoffsetx = $textcavity[0];
-		$textoffsety = $textcavity[3] - $th;
+		$textoffsetx = $textcavity[0] + $padx;
+		$textoffsety = $textcavity[3] - $th - $pady;
 	} elsif ($textanchor eq 'ne') {
-		$textoffsetx = $textcavity[2] - $tw;
-		$textoffsety = $textcavity[1];
+		$textoffsetx = $textcavity[2] - $tw - $padx;
+		$textoffsety = $textcavity[1] + $pady;
 	} elsif ($textanchor eq 'nw') {
-		$textoffsetx = $textcavity[0];
-		$textoffsety = $textcavity[1];
+		$textoffsetx = $textcavity[0] + $padx;
+		$textoffsety = $textcavity[1] + $pady;
 	}
+	$self->imageX($x + $imageoffsetx);
+	$self->imageY($y + $imageoffsety);
+	$self->rectX($x);
+	$self->rectY($y);
+	$self->textX($x + $textoffsetx);
+	$self->textY($y + $textoffsety);
 
-	if ($type =~ /image/) {
-		my $itag;
-		$itag = $self->createImage($x + $imageoffsetx, $y + $imageoffsety, 
-			-image => $image, 
-			-anchor => 'nw',
-		) if defined $image;
-		$self->cimage($itag);
-	}
-	if ($type =~ /text/) {
-		my $ttag;
-		$ttag = $self->createText($x + $textoffsetx, $y + $textoffsety, 
-			-text => $text,
-			-justify => $self->canvas->cget('-textjustify'),
-			-anchor => 'nw',
-			-font => $self->canvas->cget('-font'),
-		) if defined $text;
-		$self->ctext($ttag);
-	}
-	my $dx = $x + $cellwidth;
-	my $dy = $y + $cellheight;
-	my $rtag = $self->createRectangle($x, $y, $dx, $dy,
-		-fill => undef,
-		-outline => undef,
-	);
-	$self->crect($rtag);
-	$self->region($x, $y, $dx, $dy);
+	$self->drawRect;
+	$self->drawImage;
+	$self->drawText;
+
 	$self->column($column);
 	$self->row($row);
+	$self->ismapped(1);
 }
 
-=item B<hidden>I<(?$flag?)>
+sub drawImage {
+	my $self = shift;
+	my $image = $self->image;
+	return unless defined $image;
+	return unless $self->itemtype =~ /image/;
+	$self->deleteImage;
 
-Sets and returns the hidden flag belonging to this entry.
+	my $itag;
+	my $c = $self->Subwidget('Canvas');
+	$itag = $c->createImage($self->imageX, $self->imageY,
+		-image => $image,
+		-anchor => 'nw',
+		-tags => $self->tags,
+	);
 
-=cut
+	$self->cimage($itag);
+}
+
+sub drawRect {
+	my $self = shift;
+	$self->deleteRect;
+	my $owner = $self->owner;
+	my $c = $self->Subwidget('Canvas');
+
+	my $x = $self->rectX;
+	my $y = $self->rectY;
+	my $dx = $x + $owner->cellWidth;
+	my $dy = $y + $owner->cellHeight;
+	my $rtag = $c->createRectangle($x, $y, $dx, $dy,
+		-fill => $self->background,
+		-outline => $self->background,
+		-tags => $self->tags,
+	);
+
+	if (($owner eq $self->listbrowser) and ($self->columnCapable)) {
+		my @columns = $self->columnList;
+		for (@columns) {
+			my $col = $self->columnGet($_);
+			$dx = $dx + $col->cellWidth + 1;
+		}
+	}
+	$self->region($x, $y, $dx, $dy);
+	$self->crect($rtag);
+
+	$c->raise($self->cimage) if defined $self->cimage;
+	$c->raise($self->ctext) if defined $self->ctext;
+}
+
+sub drawText {
+	my $self = shift;
+	my $text = $self->textFormatted;
+	return unless defined $text;
+	return unless $self->itemtype =~ /text/;
+	$self->deleteText;
+	my $x = $self->textX;
+	my $y = $self->textY;
+
+	my $ttag;
+	my $c = $self->Subwidget('Canvas');
+	$ttag = $c->createText($x, $y,
+		-fill => $self->foreground,
+		-text => $text,
+		-justify => $self->textjustify,
+		-anchor => 'nw',
+		-font => $self->font,
+		-tags => $self->tags,
+	) if defined $text;
+
+	$self->ctext($ttag);
+
+}
 
 sub hidden {
 	my $self = shift;
@@ -284,24 +379,31 @@ sub hidden {
 	return $self->{HIDDEN}
 }
 
-=item B<image>I<(?$image?)>
-
-Sets and returns the image object belonging to this entry.
-
-=cut
-
 sub image {
 	my $self = shift;
-	$self->{IMAGE} = shift if @_;
+	if (@_) {
+		$self->{IMAGE} = shift;
+		$self->drawImage if defined $self->crect;
+	}
 	return $self->{IMAGE}
 }
 
-=item B<inregion>I<($x, $y)>
+sub imageX {
+	my $self = shift;
+	$self->{IMAGEX} = shift if @_;
+	return $self->{IMAGEX}
+}
 
-Returns true if the point at I<$x>, I<$y> is inside
-the region of this entry.
+sub imageY {
+	my $self = shift;
+	$self->{IMAGEY} = shift if @_;
+	return $self->{IMAGEY}
+}
 
-=cut
+sub isentry {
+	my $self = shift;
+	return $self->owner eq $self->listbrowser;
+}
 
 sub inregion {
 	my ($self, $x, $y) = @_;
@@ -334,7 +436,7 @@ sub minCellSize {
 		$textwidth = $self->textWidth($text);
 	}
 	my $pad = 6;
-	$pad = 4 if $itemtype ne 'imagetext';
+#	$pad = 6 if $itemtype ne 'imagetext';
 	$imageheight = $imageheight + $pad;
 	$imagewidth = $imagewidth + $pad;
 	$textheight = $textheight + $pad;
@@ -342,24 +444,42 @@ sub minCellSize {
 	return ($imagewidth, $imageheight, $textwidth, $textheight)
 }
 
-=item B<name>
-
-Sets and returns name of this entry.
-
-=cut
-
 sub name { return $_[0]->{NAME} }
 
-=item B<owner>I<(?$owner?)>
-
-=cut
-
-sub owner {
+sub opened {
 	my $self = shift;
-	$self->{OWNER} = shift if @_;
-	return $self->{OWNER}
+	$self->{OPENED} = shift if @_;
+	return $self->{OPENED}
 }
 
+sub openedparent {
+	my $self = shift;
+	my $name = $self->name;
+	my $p = $self->infoParent($name);
+	my $r = '';
+	if (defined $p) {
+		my $parent = $self->get($p);
+		if (($parent->openedparent) and ($parent->opened)) {
+			$r = 1
+		}
+	} else {
+		#is root always open
+		$r = 1
+	}
+	return $r
+}
+
+sub rectX {
+	my $self = shift;
+	$self->{RECTX} = shift if @_;
+	return $self->{RECTX}
+}
+
+sub rectY {
+	my $self = shift;
+	$self->{RECTY} = shift if @_;
+	return $self->{RECTY}
+}
 
 sub region {
 	my $self = shift;
@@ -368,75 +488,196 @@ sub region {
 	return @$r;
 }
 
-=item B<row>
-
-Sets and returns the row number of this entry.
-
-=cut
-
 sub row {
 	my $self = shift;
 	$self->{ROW} = shift if @_;
 	return $self->{ROW}
 }
 
-=item B<select>I<($flag)>
-
-If I<$flag> is set it changes the look of this entry as selected.
-Otherwise changes the look to un-selected it.
-
-=cut
-
 sub select {
 	my ($self, $flag) = @_;
 	$flag = 1 unless defined $flag;
-	my $c = $self->canvas;
-	my $p = $c->Subwidget('Canvas');
+	my $lb = $self->listbrowser;
+	my $c = $self->Subwidget('Canvas');
 	my $r = $self->crect;
 	my $t = $self->ctext;
-	$self->{TFILL} = $p->itemcget($t, '-fill') unless defined $self->{TFILL};
-	$self->{SELECTED} = $flag;
+	my @columns = $self->columnList;
 	if ($flag) {
-		$p->itemconfigure($r,
-			-fill => $c->cget('-selectbackground'),
-			-outline => $c->cget('-selectbackground'),
+		return if $self->selected;
+		my @coords;
+		my @region = $self->region;
+		if ($self->hierarchy) {
+			my $lb = $self->listbrowser;
+			my $sr = $lb->cget('-scrollregion');
+			@coords = ($lb->cget('-marginleft'), $region[1], $sr->[2], $region[3]);
+		} else {
+			@coords = @region;
+		}
+		my $a = $c->createRectangle(@coords,
+			-fill => $lb->cget('-selectbackground'),
+			-outline => $lb->cget('-selectbackground'),
+			-tags => ['sel'],
 		);
-		$p->raise($self->cimage);
-		$p->raise($t);
-		$p->itemconfigure($t, 
-			-fill => $c->cget('-selectforeground'),
+		$self->cselect($a);
+		$c->raise($self->cimage, $a);
+		$c->raise($t, $a);
+		$c->raise($self->cindicator, $a);
+		$c->raise($self->cguideH, $a);
+		$c->raise($self->cguideV, $a);
+		my $next = $self->infoNext($self->name);
+		if (defined $next) {
+			my $n = $self->get($next);
+			$c->raise($n->cguideV, $a);
+		}
+		$c->itemconfigure($t,
+			-fill => $lb->cget('-selectforeground'),
 		);
+		for (@columns) {
+			my $i = $self->itemGet($self->name, $_);
+			if ((defined $i) and (defined $i->ctext)) {
+				$c->raise($i->ctext, $a) if defined $i->ctext;
+				$c->itemconfigure($i->ctext, 
+					-fill => $lb->cget('-selectforeground'),
+				);
+			}
+		}
 	} else {
-		my $outline= $c->cget('-foreground');
-		$outline = undef unless $self->anchored;
-		$p->itemconfigure($r,
-			-fill => undef,
-			-outline => $outline,
+		my $a = $self->cselect;
+		$c->delete($a);
+		$self->cselect(undef);
+		$c->itemconfigure($t, 
+			-fill => $self->cget('-foreground'),
 		);
-		$p->itemconfigure($t, 
-			-fill => $self->{TFILL},
-		);
+		for (@columns) {
+			my $i = $self->itemGet($self->name, $_);
+			$c->itemconfigure($i->ctext, 
+				-fill => $self->cget('-foreground'),
+			) if (defined $i) and (defined $i->ctext);
+		}
 	}
+	$self->{SELECTED} = $flag;
 }
-
-=item B<selected>
-
-Returns true if this entry is belonging to the selection.
-
-=cut
 
 sub selected { return $_[0]->{SELECTED} }
 
-=item B<text>I<(?$string?)>
-
-Sets and returns the text string belonging to this entry.
-
-=cut
+sub tags {
+	my $self = shift;
+	my $owner = $self->owner;
+	my @tags;
+	if ($owner eq $self->listbrowser) {
+		push @tags, 'main'
+	} else {
+		push @tags, $owner->crect;
+	}
+	return \@tags;
+}
 
 sub text {
 	my $self = shift;
-	$self->{TEXT} = shift if @_;
+	if (@_) {
+		my $t = shift;
+		$self->{TEXT} = $t;
+		if ((defined $t) and (defined $self->crect)) {
+			$self->textFormatted($self->textFormat($t));
+			$self->drawText
+		}
+	}
 	return $self->{TEXT}
+}
+
+sub textFormatted {
+	my $self = shift;
+	$self->{TEXTFORMATTED} = shift if @_;
+	return $self->{TEXTFORMATTED}
+}
+
+
+=item B<textFormat>I<($text)>
+
+Formats, basically wraps, I<$text> taking the option I<-wraplength> into account.
+I<$text> can be a multi line string.
+
+=cut
+
+sub textFormat {
+	my ($self, $text) = @_;
+	my $wraplength = $self->wraplength;
+	my $font = $self->font;
+	return $text if $wraplength eq 0;
+	my @lines = split (/\n/, $text);
+	my @out;
+	for (@lines) {
+		my $line = $_;
+		my $length = $self->fontMeasure($font, $line);
+		if ($length > $wraplength) {
+			my $res = $length / length($line);
+			my $oklength = int($wraplength/$res);
+			while (length($line) > $oklength) {
+				my $t = substr($line, 0, $oklength, '');
+				if ($t =~ s/([$dlmreg])([^$dlmreg]+$)//) {
+					$line = "$2$line";
+					$t = "$t$1";
+				}
+				push @out, $t;
+			}
+			push @out, $line;
+		} else {
+			push @out, $line;
+		}
+	}
+	my $result = '';
+	while (@out) {
+		$result = $result . shift @out;
+		$result = "$result\n" if @out
+	}
+	return $result
+}
+
+=item B<textHeight>I<($text)>
+
+Returns the display height of I<$text> in pixels.
+I<$text> can be a multi line string.
+
+=cut
+
+sub textHeight {
+	my ($self, $text) = @_;
+	return 0 if $text eq '';
+	my $height = 1;
+	while ($text =~ /\n/g) { $height ++ }
+	my $font = $self->cget('-font');
+	return ($height * $self->fontMetrics($font, '-linespace')) #+ $self->fontMetrics($font, '-descent');;
+}
+
+=item B<textWidth>I<($text)>
+
+Returns the display width of I<$text> in pixels.
+I<$text> can be a multi line string.
+
+=cut
+
+sub textWidth {
+	my ($self, $text) = @_;
+	my $font = $self->font;
+	my $width = 0;
+	my @lines = split("\n", $text);
+	for (@lines) {
+		my $w = $self->fontMeasure($font, $_);
+		$width = $w if $w > $width;
+	}
+	return $width
+}
+
+sub textX {
+	my $self = shift;
+	$self->{TEXTX} = shift if @_;
+	return $self->{TEXTX}
+}
+
+sub textY {
+	my $self = shift;
+	$self->{TEXTY} = shift if @_;
+	return $self->{TEXTY}
 }
 
 =back
@@ -449,12 +690,6 @@ Same as Perl.
 
 Hans Jeuken (hanje at cpan dot org)
 
-=head1 TODO
-
-=over 4
-
-=back
-
 =head1 BUGS AND CAVEATS
 
 If you find any bugs, please report them here: L<https://github.com/haje61/Tk-ListBrowser/issues>.
@@ -463,7 +698,7 @@ If you find any bugs, please report them here: L<https://github.com/haje61/Tk-Li
 
 =over 4
 
-=back
+=item L<Tk::ListBrowser::BaseItem>
 
-=cut
+=back
 

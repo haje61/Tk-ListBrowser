@@ -20,10 +20,13 @@ use base qw(Tk::ListBrowser::BaseItem);
 
 =head1 DESCRIPTION
 
+Inherits L<Tk::ListBrowser::BaseItem>.
 
-=head1 METHODS
+This module creates an object that holds all information of every entry.
+You will never need to create an side column object yourself.
 
-=over 4
+Besides the options in it's parent, you can use the I<-sortcase>,
+I<-sortfield> and I<-sortnumerical> options.
 
 =cut
 
@@ -35,6 +38,9 @@ sub new {
 	bless $self, $class;
 
 	$self->itemtype('text') unless defined $self->itemtype;
+	$self->sortcase('') unless defined $self->sortcase;
+	$self->sortfield('text') unless defined $self->sortfield;
+	$self->sortnumerical('') unless defined $self->sortnumerical;
 	$self->{VALUES} = {};
 
 	return $self
@@ -90,6 +96,8 @@ sub cellSize {
 sub cellWidth {
 	my $self = shift;
 	$self->{CELLWIDTH} = shift if @_;
+	my $fw = $self->forceWidth;
+	return $fw if defined $fw;
 	return $self->{CELLWIDTH}
 }
 
@@ -102,12 +110,31 @@ sub cheader{
 sub clear {
 	my $self = shift;
 	$self->SUPER::clear;
-	my $c = $self->canvas->Subwidget('Canvas');
+	my $c = $self->Subwidget('Canvas');
 	my $h = $self->cheader;
 	$c->delete($h) if defined $h;
 	$self->cheader(undef);
 	my @items = $self->itemList;
 	for (@items) { $self->itemGet($_)->clear }
+}
+
+sub draw {
+	my $self = shift;
+
+	my $c = $self->Subwidget('Canvas');
+	my @region = $self->region;
+	my $rtag = $c->createRectangle($self->region,
+		-fill => $self->background,
+		-outline => undef,
+	);
+	$c->lower($rtag);
+	$self->crect($rtag);
+}
+
+sub forceWidth {
+	my $self = shift;
+	$self->{FORCEWIDTH} = shift if @_;
+	return $self->{FORCEWIDTH}
 }
 
 sub header {
@@ -143,10 +170,28 @@ sub itemList {
 sub itemRemove {
 	my ($self, $entry) = @_;
 	my $vh = $self->{VALUES};
+	my $i = $vh->{$entry};
+	$i->clear;
 	delete $vh->{$entry};
 }
 
-=back
+sub sortcase{
+	my $self = shift;
+	$self->{SORTCASE} = shift if @_;
+	return $self->{SORTCASE}
+}
+
+sub sortfield{
+	my $self = shift;
+	$self->{SORTFIELD} = shift if @_;
+	return $self->{SORTFIELD}
+}
+
+sub sortnumerical{
+	my $self = shift;
+	$self->{SORTNUMERICAL} = shift if @_;
+	return $self->{SORTNUMERICAL}
+}
 
 =head1 LICENSE
 
@@ -156,12 +201,6 @@ Same as Perl.
 
 Hans Jeuken (hanje at cpan dot org)
 
-=head1 TODO
-
-=over 4
-
-=back
-
 =head1 BUGS AND CAVEATS
 
 If you find any bugs, please report them here: L<https://github.com/haje61/Tk-ListBrowser/issues>.
@@ -169,6 +208,8 @@ If you find any bugs, please report them here: L<https://github.com/haje61/Tk-Li
 =head1 SEE ALSO
 
 =over 4
+
+=item L<Tk::ListBrowser::BaseItem>
 
 =back
 

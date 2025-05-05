@@ -35,12 +35,6 @@ sub new {
 	carp 'You did not specify a list browser' unless defined $lb;
 	
 	my $self = {
-		CELLHEIGHT => 0,
-		CELLWIDTH => 0,
-		IMAGEHEIGHT => 0,
-		IMAGEWIDTH => 0,
-		TEXTHEIGHT => 0,
-		TEXTWIDTH => 0,
 		LISTBROWSER => $lb,
 	};
 	bless $self, $class;
@@ -63,7 +57,7 @@ sub cellSize {
 	my $imagewidth = 0;
 	my $textheight = 0;
 	my $textwidth = 0;
-	my $pool = $self->pool;
+	my $pool = $self->data->pool;
 	for (@$pool) {
 		my $entry = $_;
 		my ($iw, $ih, $tw, $th) = $entry->minCellSize($self->cget('-itemtype'));
@@ -108,6 +102,7 @@ sub cellSize {
 	$self->cellTextHeight($textheight);
 	$self->cellTextWidth($textwidth);
 	$self->cellWidth($cellwidth);
+	$self->listWidth($cellwidth);
 	return ($cellwidth, $cellheight)
 }
 
@@ -116,22 +111,38 @@ sub draw {
 	$item->draw($x, $y, $column, $row, $self->cget('-itemtype'))
 }
 
-sub drawHeaders {
+sub getPool {
+	my $self = shift;
+	my @pool;
+	if ($self->hierarchy) {
+		my @root = $self->infoRoot;
+		for (@root) {
+			push @pool, $self->get($_);
+		}
+	} else {
+		@pool = $self->getAll;
+	}
+	return @pool;
 }
+
+sub initColumns {
+}
+
+sub listbrowser { return $_[0]->{LISTBROWSER} }
 
 sub maxXY {
 	my $self = shift;
 	my $maxc = 0;
 	my $maxr = 0;
-	my $pool = $self->pool;
+	my $pool = $self->listbrowser->data->pool;
 	for (@$pool) {
 		my $c = $_->column;
 		$maxc = $c if ((defined $c) and ($c > $maxc));
 		my $r = $_->row;
 		$maxr = $r if ((defined $r) and ($r > $maxr));
 	}
-	my $maxx = ($maxc + 1) * ($self->cellWidth + 1);
-	my $maxy = ($maxr + 1) * ($self->cellHeight + 1);
+	my $maxx = ($maxc + 1) * ($self->cellWidth + 1) + $self->cget('-marginleft') + $self->cget('-marginright');
+	my $maxy = ($maxr + 1) * ($self->cellHeight + 1) + $self->cget('-margintop') + $self->cget('-marginbottom');
 	return ($maxx, $maxy);
 }
 
@@ -142,7 +153,7 @@ sub nextPosition {
 	my $newx = $x + ($cellwidth * 2);
 	my ($cwidth, $cheight) = $self->canvasSize;
 	if ($newx >= $cwidth) {
-		$x = 0;
+		$x = $self->cget('-marginleft');
 		$y = $y + $cellheight + 1;
 		$column = 0;
 		$row ++;
@@ -155,18 +166,18 @@ sub nextPosition {
 
 sub refresh {
 	my $self = shift;
-	my $pool = $self->pool;
+	my @pool = $self->getPool;
 	$self->clear;
 	$self->cellSize;
-	$self->drawHeaders;
+	$self->initColumns;
+	
 	my ($x, $y) = $self->startXY;
-	my $ioffsetx = 0;
 	my $column = 0;
 	my $row = 0;
 	my $fontdescent = $self->fontMetrics($self->cget('-font'), '-descent');
-	for (@$pool) {
+	for (@pool) {
 		my $item = $_;
-		next if $item->hidden;
+		next if ($item->hidden or (not $item->openedparent));
 		$self->draw($item, $x, $y, $column, $row);
 
 		($x, $y, $column, $row) = $self->nextPosition($x, $y, $column, $row);
@@ -179,7 +190,8 @@ sub scroll {
 }
 
 sub startXY {
-	return (0, 0)
+	my $self = shift;
+	return ($self->cget('-marginleft'), $self->cget('-margintop'))
 }
 
 sub type {
@@ -197,22 +209,6 @@ Hans Jeuken (hanje at cpan dot org)
 =head1 BUGS AND CAVEATS
 
 If you find any bugs, please report them here: L<https://github.com/haje61/Tk-ListBrowser/issues>.
-
-=head1 SEE ALSO
-
-=over 4
-
-=item L<Tk::ListBrowser>
-
-=item L<Tk::ListBrowser::Bar>
-
-=item L<Tk::ListBrowser::Column>
-
-=item L<Tk::ListBrowser::Item>
-
-=item L<Tk::ListBrowser::List>
-
-=back
 
 =cut
 

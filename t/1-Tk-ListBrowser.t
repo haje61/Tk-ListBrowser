@@ -1,26 +1,32 @@
 use strict;
 use warnings;
-use Test::More tests => 55;
+use Test::More tests => 97;
 use Test::Tk;
 require Tk::Photo;
 require Tk::LabFrame;
-#use Tk::DynaMouseWheelBind;
 use Tk::PNG;
+use Time::HiRes qw(time);
 
 BEGIN {
 	use_ok('Tk::ListBrowser');
 	use_ok('Tk::ListBrowser::Bar');
 	use_ok('Tk::ListBrowser::BaseItem');
 	use_ok('Tk::ListBrowser::Column');
+	use_ok('Tk::ListBrowser::Data');
+	use_ok('Tk::ListBrowser::HList');
 	use_ok('Tk::ListBrowser::Item');
 	use_ok('Tk::ListBrowser::LBCanvas');
 	use_ok('Tk::ListBrowser::LBHeader');
 	use_ok('Tk::ListBrowser::List');
 	use_ok('Tk::ListBrowser::Row');
 	use_ok('Tk::ListBrowser::SideColumn');
+	use_ok('Tk::ListBrowser::Tree');
 };
 
+$delay = 1000;
+
 createapp;
+
 my @images;
 if (opendir( my $dh, 't/icons')) {
 	while (my $file = readdir($dh)) {
@@ -38,6 +44,7 @@ my $ib;
 my $item;
 my $image;
 my $handler;
+my $data;
 if (defined $app) {
 #	$app->DynaMouseWheelBind('Tk::ListBrowser::LBCanvas');
 	$image = $app->Photo(
@@ -47,6 +54,10 @@ if (defined $app) {
 
 	$ib = $app->ListBrowser(
 		#options to play with
+#		-marginleft => 80,
+#		-marginright => 80,
+#		-margintop => 80,
+#		-marginbottom => 80,
 #		-arrange => 'list',
 #		-arrange => 'row',
 #		-filteron => 1,
@@ -57,6 +68,7 @@ if (defined $app) {
 #		-textjustify => 'left',
 #		-height => 200,
 #		-width => 200,
+#		-font => 'Hack 10',
 
 		#options needed to make tests succeed
 		-wraplength => 70,
@@ -74,6 +86,7 @@ if (defined $app) {
 	)->pack(-expand =>1, -fill => 'both');
 	$item = $ib->add('miny', -image => $image);
 	$handler = $ib->{HANDLER};
+	$data = Tk::ListBrowser::Data->new($ib);
 	my $bf = $app->LabFrame(
 		-label => 'Tools',
 		-labelside => 'acrosstop',
@@ -83,7 +96,13 @@ if (defined $app) {
 		-text => 'Clear',
 	)->pack(-side => 'left');
 	$bf->Button(
-		-command => sub { $ib->refresh },
+		-command => sub {
+			my $ts = time;
+			$ib->refresh;
+			my $te = time;
+			my $tt = $te - $ts;
+			print "refresh took $tt\n";
+		},
 		-text => 'Refresh',
 	)->pack(-side => 'left');
 	$bf->Button(
@@ -221,14 +240,62 @@ if (defined $app) {
 	}
 
 	$app->geometry('500x800+200+200');
+	pause(200);
 }
 
-testaccessors($ib, qw/header/);
-testaccessors($item, qw/cimage crect column ctext data hidden image row text/);
-testaccessors($handler, qw/cellHeight cellImageHeight cellImageWidth cellTextHeight cellTextWidth cellWidth/);
+testaccessors($data, qw/pool opened/);
+testaccessors($ib, qw/cellHeight cellImageHeight cellImageWidth
+	cellTextHeight cellTextWidth cellWidth forceWidth header listWidth/);
+testaccessors($item, qw/background cguideH cguideV cimage cindicator column cimage 
+	crect	ctext data font foreground hidden imageX imageY itemtype opened owner rectX
+	rectY row textanchor textjustify textside textX textY/);
+testaccessors($handler, qw/cellHeight cellImageHeight cellImageWidth 
+	cellTextHeight cellTextWidth cellWidth/);
 
 push @tests, (
 	[ sub { return defined $ib }, 1, 'ListBrowser widget created' ],
+	[ sub { return defined $handler }, 1, 'Tk::ListBrowser::Row created' ],
+	[ sub { return defined $data }, 1, 'Tk::ListBrowser::Data created' ],
+	[ sub {
+		$data->add('miny', -image => $image);
+		$data->add('inny', -image => $image, -before => 'miny');
+		$data->add('minny', -image => $image, -after => 'inny');
+		$data->add('mo', -image => $image);
+		my @l = $data->infoList;
+		return \@l
+	}, [qw/inny minny miny mo/], 'data add / list' ],
+	[ sub {
+		my $t = $data->get('miny');
+		return $t->name
+	}, 'miny', 'data get' ],
+	[ sub {
+		return $data->exists('miny');
+	}, 1, 'data exists' ],
+	[ sub {
+		return $data->exists('humptydumpty');
+	}, '', 'data no exists' ],
+	[ sub {
+		my $t = $data->get('miny');
+		return $t->name
+	}, 'miny', 'get' ],
+	[ sub {
+		my @all = $data->getAll;
+		my $size = @all;
+		return $size
+	}, 4, 'getAll' ],
+	[ sub {
+		return $data->index('mo');
+		}, 3, 'index' ],
+	[ sub {
+		$data->itemConfigure('miny', -data => 'new data');
+		return $data->itemCget('miny', '-data');
+	}, 'new data', 'data itemConfigure / itemCget' ],
+	[ sub {
+		$data->delete('miny');
+		return $data->exists('miny');
+	}, '', 'data delete' ],
+
+
 	[ sub {
 		$ib->add('inny', -image => $image, -before => 'miny');
 		$ib->add('minny', -image => $image, -after => 'inny');
@@ -256,6 +323,7 @@ push @tests, (
 		my @l = $ib->infoList;
 		return \@l
 	}, [], 'deleteAll' ],
+
 	[ sub {
 		for (@images) {
 			my $text = $_;
@@ -282,18 +350,13 @@ push @tests, (
 				);
 			}
 		}
-		$ib->refresh;
 		my @l = $ib->infoList;
 		my $size = @l;
 		return $size
-	}, 744, 'refresh' ],
+	}, 744, 'load' ],
 	[ sub {
-		pause(50);
 		return $ib->index('accessories-text-editor.png');
 		}, 0, 'index' ],
-	[ sub {
-		return $ib->indexColumnRow(0, 0);
-		}, 0, 'indexColumnRow' ],
 	[ sub {
 		$ib->selectionSet('edit-find.png', 'document-new.png');
 		my @l = $ib->selectionGet;
@@ -358,7 +421,16 @@ push @tests, (
 		$ib->entryConfigure('arrow-down.png', -data => 'new data');
 		return $ib->entryCget('arrow-down.png', '-data');
 	}, 'new data', 'entryConfigure' ],
+	[ sub {
+		$ib->refresh;
+		return 1
+	}, 1, 'refresh' ],
+	[ sub {
+		return $ib->indexColumnRow(0, 0);
+		}, 0, 'indexColumnRow' ],
 );
 
+my $font = $ib->cget('-font');
+print "font $font\n";
 starttesting;
 

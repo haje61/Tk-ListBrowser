@@ -1,15 +1,37 @@
 use strict;
 use warnings;
-use Test::More tests => 40;
+use Test::More tests => 42;
 use Test::Tk;
 require Tk::Photo;
 require Tk::LabFrame;
 require Tk::ListBrowser;
 #use Tk::DynaMouseWheelBind;
 use Tk::PNG;
+use Time::HiRes qw(time);
 
+sub randnum {
+	return rand(10)
+}
+my @chars = (qw/a b c d e f g h i j k l m n o p q r s t u v w x y z 0 1 2 3 4 5 6 7 8 9 0 _/);
+my $charsize = @chars;
+
+sub randstring {
+	my $length = shift;
+	my $string = '';
+	for (0 .. $length) {
+		my $index = int(rand($charsize));
+		my $char = $chars[$index];
+		$string = "$string$char";
+	}
+	my $flag = int(rand(2));
+	$string = ucfirst($string) if $flag;
+	return $string;
+}
+
+$delay = 1000;
 
 createapp;
+
 my @images;
 if (opendir( my $dh, 't/icons')) {
 	while (my $file = readdir($dh)) {
@@ -34,6 +56,12 @@ if (defined $app) {
 		-textside => 'right',
 		-textjustify => 'left',
 		-selectmode => 'multiple',
+
+#		-marginleft => 80,
+#		-margintop => 80,
+#		-marginbottom => 80,
+#		-marginright => 80,
+
 		-browsecmd => sub {
 			print "browsecmd ";
 			for (@_) { print  "$_ " }
@@ -45,12 +73,60 @@ if (defined $app) {
 			print "\n";
 		},
 	)->pack(-expand =>1, -fill => 'both');
+	my $bf = $app->LabFrame(
+		-label => 'Tools',
+		-labelside => 'acrosstop',
+	)->pack(-fill => 'x');
+	$bf->Button(
+		-command => sub { $ib->clear },
+		-text => 'Clear',
+	)->pack(-side => 'left');
+	$bf->Button(
+		-command => sub {
+			my $ts = time;
+			$ib->refresh;
+			my $te = time;
+			my $tt = $te - $ts;
+			print "refresh took $tt\n";
+		},
+		-text => 'Refresh',
+	)->pack(-side => 'left');
+	$bf->Button(
+		-command => sub { $ib->selectAll },
+		-text => 'Select all',
+	)->pack(-side => 'left');
+	$bf->Button(
+		-command => sub { $ib->selectionClear },
+		-text => 'Clear selection',
+	)->pack(-side => 'left');
 	$sc = $ib->columnCreate('test');
+	my $mf = $app->LabFrame(
+		-label => 'Move column Thrd',
+		-labelside => 'acrosstop',
+	)->pack(-fill => 'x');
+	$mf->Button(
+		-command => sub {
+			my $i = $ib->columnIndex('rebmun');
+			$i --;
+			$ib->columnMove('rebmun', $i);
+			$ib->refresh;
+		},
+		-text => 'Left',
+	)->pack(-side => 'left');
+	$mf->Button(
+		-command => sub {
+			my $i = $ib->columnIndex('rebmun');
+			$i ++;
+			$ib->columnMove('rebmun', $i);
+			$ib->refresh;
+		},
+		-text => 'Right',
+	)->pack(-side => 'left');
 
 	$app->geometry('500x400+200+200');
 }
 
-testaccessors($sc, qw/background cellImageWidth cellTextWidth cellWidth foreground header itemtype/);
+testaccessors($sc, qw/background cellImageWidth cellTextWidth cellWidth forceWidth foreground header itemtype/);
 
 push @tests, (
 	[ sub {
@@ -84,7 +160,12 @@ push @tests, (
 		return \@l 
 	}, ['pipodol'], 'columnCreate' ],
 	[ sub {
-		$ib->columnCreate('number', -before => 'pipodol');
+		$ib->columnCreate('number', 
+			-background => '#FFFF00', 
+			-before => 'pipodol',
+			-sortnumerical => 1,
+		);
+#		$ib->columnCreate('number', -before => 'pipodol');
 		my @l = $ib->columnList;
 		return \@l 
 	}, ['number', 'pipodol'], 'columnCreate' ],
@@ -93,6 +174,11 @@ push @tests, (
 		my @l = $ib->columnList;
 		return \@l 
 	}, ['number', 'string', 'pipodol'], 'columnCreate' ],
+	[ sub {
+		$ib->columnMove('pipodol', 0);
+		my @l = $ib->columnList;
+		return \@l 
+	}, ['pipodol', 'number', 'string'], 'columnMove' ],
 	[ sub {
 		return $ib->columnExists('pipodol');
 	}, 1, 'columnExists true' ],
@@ -113,7 +199,7 @@ push @tests, (
 	}, 'green', 'columnExists false' ],
 	[ sub {
 		return $ib->columnIndex('pipodol');
-	}, 2, 'columnIndex' ],
+	}, 0, 'columnIndex' ],
 	[ sub {
 		$ib->columnRemove('pipodol');
 		return 	$ib->columnExists('pipodol')
@@ -126,13 +212,21 @@ push @tests, (
 		return $ib->itemExists('edit-cut.png', 'number');
 	}, '', 'itemExists false' ],
 	[ sub {
-		$ib->columnCreate('rebmun');
-		$ib->columnCreate('bernum');
+		$ib->columnCreate('rebmun', -background => '#80FF80');
+#		$ib->columnCreate('rebmun');
+		$ib->columnCreate('bernum', -background => '#80FFFF');
+#		$ib->columnCreate('bernum');
 		my $count = 0;
 		for (@images) {
-			$ib->itemCreate($_, 'number', -text => "aaaaaaaaaa$count");
-			$ib->itemCreate($_, 'rebmun', -text => "dddddd$count");
-			$ib->itemCreate($_, 'bernum', -text => "gggggggggggggg$count");
+			$ib->itemCreate($_, 'number',
+				-background => '#f954e0', 
+				-text => randnum,
+			);
+			$ib->itemCreate($_, 'rebmun',
+#				-background => '#25a48a',
+				-text => randstring(8)
+			);
+			$ib->itemCreate($_, 'bernum', -text => randstring(16));
 			$count ++
 		}
 		return 1
@@ -142,8 +236,8 @@ push @tests, (
 	}, 1, 'itemExists true' ],
 	[ sub {
 		my $i = $ib->itemGet('edit-cut.png', 'number');
-		return $i->text;
-	}, 'aaaaaaaaaa7', 'itemGet' ],
+		return $i->name;
+	}, 'edit-cut.png', 'itemGet' ],
 	[ sub {
 		$ib->itemConfigure('edit-cut.png', 'number', '-background' => 'green');
 		return $ib->itemGet('edit-cut.png', 'number')->background
@@ -156,7 +250,7 @@ push @tests, (
 		return $ib->itemExists('edit-cut.png', 'number');
 	}, '', 'itemRemove' ],
 	[ sub {
-		$ib->headerCreate('');
+		$ib->headerCreate('', -sortable => 1);
 		return defined $ib->headerGet('');
 	}, 1, 'headerCreate headerGet main' ],
 	[ sub {
@@ -192,18 +286,22 @@ push @tests, (
 #		$ib->Subwidget('Canvas')->Label(-text => 'Try this!')->pack(-fill => 'x');
 		$ib->headerCreate('',
 			-text => 'Primary',
+			-sortable => 1,
 		);
 		$ib->headerCreate('number',
 			-text => 'Sec',
+			-sortable => 1,
 		);
 		$ib->headerCreate('rebmun',
 			-text => 'Thrd',
+			-sortable => 1,
 		);
 		$ib->headerCreate('bernum',
 			-text => 'Frth',
+			-sortable => 1,
 		);
+		$ib->configure('sorton' => '');
 		$ib->refresh;
-		return '';
 	}, '', 'refresh' ],
 );
 

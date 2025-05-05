@@ -1,11 +1,5 @@
 package Tk::ListBrowser::LBHeader;
 
-=head1 NAME
-
-Tk::ListBrowser::LBHeader - Resizeable header for Tk::ListBrowser
-
-=cut
-
 use strict;
 use warnings;
 use vars qw($VERSION);
@@ -37,18 +31,6 @@ static unsigned char up_bits[] = {
    0xfe, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00, 0x00 };
 ';
 
-
-=head1 SYNOPSIS
-
-
-=head1 DESCRIPTION
-
-
-=head1 ADVERTISED SUBWIDGETS
-
-=cut
-
-
 sub Populate {
 	my ($self,$args) = @_;
 
@@ -69,8 +51,6 @@ sub Populate {
 	$self->Advertise(Label => $label);
 
 	my $sizer = $self->Label(
-#		-anchor => 'w',
-#		-justify => 'left',
 		-borderwidth => 2,
 	)->pack(-side => 'right', -fill => 'y');
 	$self->Advertise(Sizer => $sizer);
@@ -78,7 +58,7 @@ sub Populate {
 	$sizer->bind('<Leave>', [$self, 'SizerLeave']);
 	$sizer->bind('<Button-1>', [$self, 'SizerClick', $self, Ev('x'), Ev('y')]);
 	$sizer->bind('<ButtonRelease-1>', [$self, 'SizerRelease']);
-	$sizer->bind('<Motion>', [$self, 'Resize', $self, Ev('x'), Ev('y')]);
+	$sizer->bind('<B1-Motion>', [$self, 'Resize', $self, Ev('x'), Ev('y')]);
 	
 
 	my $sort = $self->Label->pack(-side => 'right');
@@ -117,6 +97,26 @@ sub Populate {
 	return $self;
 }
 
+sub column { return $_[0]->{COLUMN} }
+
+sub listbrowser { return $_[0]->{LISTBROWSER} }
+
+sub NeedlePos {
+	my $self = shift;
+	my $xn;
+	my $lb = $self->listbrowser;
+	my $c = $lb->Subwidget('Canvas');
+	my $column = $self->column;
+	my $next = $lb->columnNext($column);
+	if (defined $next) {
+		$xn = $lb->headerGet($next)->x;
+	} else {
+		my $h = $lb->headerGet($column);
+		$xn = $h->x + $h->width;
+	}
+	return $xn
+}
+
 sub Resize {
 	my ($self, $widget, $x, $y) = @_;
 	if ($self->{ACTIVE}) {
@@ -135,9 +135,18 @@ sub Resize {
 		my $bordersize = ($bw +$lb + $sb + $rb);
 		my $min = $l->width + $r->width + $s->width + $bordersize;
 		unless ($width <= $min) {
-			my $c = $self->{COLUMN};
-			my $w = $self->{LISTBROWSER};
-			$w->columnWidth($c, $width);
+			my $column = $self->column;
+			my $lb = $self->listbrowser;
+			$lb->columnWidth($column, $width);
+			$lb->headerPlace;
+			my $c = $lb->Subwidget('Canvas');
+			my $xnold = $self->{'needlepos'};
+			my $newpos = $self->NeedlePos;
+			my $needle = $self->{'needle'};
+			my $delta =  $newpos - $xnold;
+			$c->move($needle,  $delta, 0);
+			$self->{'needlepos'} = $newpos;
+			$self->update;
 		}
 	}
 }
@@ -152,6 +161,16 @@ sub SizerClick {
 	my ($self, $widget, $x, $y) = @_;
 	$self->{CLICKPOS} = $x;
 	$self->{ACTIVE} = 1;
+	my $lb = $self->listbrowser;
+	my $c = $lb->Subwidget('Canvas');
+	my $region = $lb->cget('-scrollregion');
+	my $xn = $self->NeedlePos;
+	$self->{'needlepos'} = $xn;
+	my $needle = $c->createLine($xn, 0, $xn, $region->[3],
+		-fill => $lb->cget('-foreground'),
+	);
+	$c->raise($needle);
+	$self->{'needle'} = $needle;
 }
 
 sub SizerEnter {
@@ -164,14 +183,21 @@ sub SizerEnter {
 sub SizerLeave {
 	my $self = shift;
 	my $s = $self->Subwidget('Sizer');
-	my $c = $self->{CURSORSAVE};
-	$s->configure(-cursor => $c) if defined $c;
+	my $cs = $self->{CURSORSAVE};
+	$s->configure(-cursor => $cs) if defined $cs;
 	delete $self->{CURSORSAVE};
 }
 
 sub SizerRelease {
 	my $self = shift;
 	$self->{ACTIVE} = 0;
+	my $lb = $self->listbrowser;
+	my $c = $lb->Subwidget('Canvas');
+	my $needle = $self->{'needle'};
+	delete $self->{'needle'};
+	delete $self->{'needlepos'};
+	$c->delete($needle);
+	$lb->refresh;
 }
 
 my %sortmatrix = (
@@ -182,9 +208,10 @@ my %sortmatrix = (
 
 sub SortClick {
 	my $self = shift;
-	my $name = $self->Subwidget('Label')->cget('-text');
+#	my $name = $self->Subwidget('Label')->cget('-text');
 	my $order = $sortmatrix{$self->cget('-sortorder')};
-	$self->Callback('-sortcall', $name, $order);
+	$self->Callback('-sortcall', $self->column, $order);
+	$self->listbrowser->sortList;
 }
 
 
@@ -197,29 +224,6 @@ sub sortorder {
 	return $self->{SORT}	
 }
 
-=head1 LICENSE
-
-Same as Perl.
-
-=head1 AUTHOR
-
-Hans Jeuken (hanje at cpan dot org)
-
-=head1 BUGS AND CAVEATS
-
-If you find any bugs, please contact the author.
-
-=head1 SEE ALSO
-
-=over 4
-
-=item L<Tk::FileBrowser>
-
-=item L<Tk::HList>
-
-=back
-
-=cut
 
 1;
 

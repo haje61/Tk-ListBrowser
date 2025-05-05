@@ -15,7 +15,26 @@ $VERSION =  0.04;
 
 =head1 SYNOPSIS
 
+You never do this yourself. But this is how it works.
+
+ my $base = Tk::ListBrowser::BaseItem->new(%options,
+    -name => $name,
+    -listbrowser => $reftolistbrowserobject,
+ );
+
+
 =head1 DESCRIPTION
+
+Provides a base class for modules L<Tk::ListBrowser::Item> and L<Tk::ListBrowser::SidePanel>.
+It provides a method overload to the L<Tk::ListBrowser> object.
+
+Available options are I<background>, I<font>, I<foreground>, I<-owner>, I<itemtype>, I<textanchor>,
+I<textjustify>, I<textside> and I<wraplength>.
+
+The I<-owner> option is not a standard option. It specifies which object (side column or ListBrowser widget)
+is holding this item. By default it is set to the ListBrowser widget.
+
+If an option is not defined this module will look for the corresponding option in it's owner.
 
 =head1 METHODS
 
@@ -28,22 +47,26 @@ sub new {
 	
 	my %args = @_;
 
-	my $canv = delete $args{'-canvas'};
-	croak 'You did not specify a canvas' unless defined $canv;
+	my $lb = delete $args{'-listbrowser'};
+	croak 'You did not specify a listbrowser' unless defined $lb;
 
 	my $name = delete $args{'-name'};
 	croak 'You did not specify a name' unless defined $name;
 
-	my $self = {
-		CANVAS => $canv,
+
+	my $self = {	
+		ISMAPPED => '',
+		LISTBROWSER => $lb,
 		NAME => $name,
 		REGION => [0, 0, 0, 0],
 	};
-	bless $self, $class;
+	bless($self, $class);
 	
 	for (keys %args) {
 		$self->configure($_, $args{$_})
 	}
+
+	$self->owner($self->listbrowser) unless defined $self->owner;
 
 	return $self
 }
@@ -52,10 +75,21 @@ sub AUTOLOAD {
 	my $self = shift;
 	return if $AUTOLOAD =~ /::DESTROY$/;
 	$AUTOLOAD =~ s/^.*:://;
-	return $self->{CANVAS}->$AUTOLOAD(@_);
+	return $self->{LISTBROWSER}->$AUTOLOAD(@_);
 }
 
-sub canvas { return $_[0]->{CANVAS} }
+sub background {
+	my $self = shift;
+	$self->{BACKGROUND} = shift if @_;
+	return $self->{BACKGROUND} if defined $self->{BACKGROUND};
+	return $self->owner->cget('-background')
+}
+
+=item B<cget>I<($option)>
+
+Returns the value of option I<$option>.
+
+=cut
 
 sub cget {
 	my ($self, $option) = @_;
@@ -68,48 +102,63 @@ sub cget {
 	}
 }
 
-sub configure {
-	my ($self, $option, @values) = @_;
-	my $d = quotemeta('-');
-	$option =~ s/^$d//;
-	if ($self->can($option)) {
-		return $self->$option(@values)
-	} else {
-		croak "Option '$option' not valid"
-	}
-}
 
-=item B<clear>I<(?$flag?)>
+=item B<clear>
 
-Clears all visible items (text, image, anchor, selection) on the canvas belonging to this item.
+Clears all visible items on the canvas belonging to this item.
 
 =cut
 
 sub clear {
 	my $self = shift;
+	my $c = $self->Subwidget('Canvas');
+	$self->ismapped('');
 	$self->region(0, 0, 0, 0);
+	my $rect = $self->crect;
+	$c->delete($rect) if defined $rect;
+	$self->crect(undef);
 }
 
-=item B<background>I<(?$color?)>
+=item B<configure>I<(%options)>
+
+Configures I<%options>.
 
 =cut
 
-sub background {
+sub configure {
+	my ($self, %options) = @_;
+	my $d = quotemeta('-');
+	for (keys %options) {
+		my $option = $_;
+		my $value = $options{$option};
+		$option =~ s/^$d//;
+		if ($self->can($option)) {
+			$self->$option($value)
+		} else {
+			croak "Option '$option' not valid";
+			return;
+		}
+	}
+}
+
+sub crect {
 	my $self = shift;
-	$self->{BACKGROUND} = shift if @_;
-	return $self->{BACKGROUND} if defined $self->{BACKGROUND};
-	return $self->canvas->cget('-background')
+	$self->{CRECT} = shift if @_;
+	return $self->{CRECT}
 }
 
-=item B<foreground>I<(?$color?)>
-
-=cut
+sub font {
+	my $self = shift;
+	$self->{FONT} = shift if @_;
+	return $self->{FONT} if defined $self->{FONT};
+	return $self->owner->cget('-font')
+}
 
 sub foreground {
 	my $self = shift;
 	$self->{FOREGROUND} = shift if @_;
 	return $self->{FOREGROUND} if defined $self->{FOREGROUND};
-	return $self->canvas->cget('-foreground')
+	return $self->owner->cget('-foreground')
 }
 
 =item B<inregion>I<($x, $y)>
@@ -129,15 +178,20 @@ sub inregion {
 	return 1
 }
 
-=item B<itemtype>I<(?$type?)>
-
-=cut
+sub ismapped {
+	my $self = shift;
+	$self->{ISMAPPED} = shift if @_;
+	return $self->{ISMAPPED}
+}
 
 sub itemtype {
 	my $self = shift;
 	$self->{ITEMTYPE} = shift if @_;
-	return $self->{ITEMTYPE}
+	return $self->{ITEMTYPE} if defined $self->{ITEMTYPE};
+	return $self->owner->cget('-itemtype')
 }
+
+sub listbrowser { return $_[0]->{LISTBROWSER} }
 
 =item B<name>
 
@@ -147,6 +201,12 @@ Returns the name of this entry.
 
 sub name { return $_[0]->{NAME} }
 
+sub owner {
+	my $self = shift;
+	$self->{OWNER} = shift if @_;
+	return $self->{OWNER}
+}
+
 sub region {
 	my $self = shift;
 	$self->{REGION} = [@_] if @_;
@@ -154,48 +214,38 @@ sub region {
 	return @$r;
 }
 
-=item B<textanchor>I<(?$anchor?)>
-
-=cut
-
 sub textanchor {
 	my $self = shift;
 	$self->{TEXTANCHOR} = shift if @_;
 	return $self->{TEXTANCHOR} if defined $self->{TEXTANCHOR};
-	return $self->canvas->cget('-textanchor')
+	return $self->owner->cget('-textanchor')
 }
-
-=item B<textjustifyanchor>I<(?$justify?)>
-
-=cut
 
 sub textjustify {
 	my $self = shift;
 	$self->{TEXTJUSTIFY} = shift if @_;
 	return $self->{TEXTJUSTIFY} if defined $self->{TEXTJUSTIFY};
-	return $self->canvas->cget('-textjustify')
+	return $self->owner->cget('-textjustify')
 }
-
-=item B<textside>I<(?$side?)>
-
-=cut
 
 sub textside {
 	my $self = shift;
 	$self->{TEXTSIDE} = shift if @_;
 	return $self->{TEXTSIDE} if defined $self->{TEXTSIDE};
-	return $self->canvas->cget('-textside')
+	return $self->owner->cget('-textside')
 }
-
-=item B<wraplength>I<(?$size?)>
-
-=cut
 
 sub wraplength {
 	my $self = shift;
-	$self->{WRAPLENGTH} = shift if @_;
+	if (@_) {
+		my $l = shift;
+		if ($l > 0) {
+			$l = 40 if $l < 40;
+		}
+		$self->{WRAPLENGTH} = $l;
+	}
 	return $self->{WRAPLENGTH} if defined $self->{WRAPLENGTH};
-	return $self->canvas->cget('-wraplength')
+	return $self->owner->cget('-wraplength')
 }
 
 
