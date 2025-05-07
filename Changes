@@ -1,5 +1,9 @@
 Revision history for Perl extension Tk::ListBrowser.
 
+0.06  Wed May 07 2025
+	- Fixed missing prerequisite.
+	- Fixed redirect of -filterdelay option.
+
 0.05  Wed May 07 2025
 	- Fixed POD error.
 	- Beautified selection by changing selection area to an image with relief.

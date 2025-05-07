@@ -10,7 +10,7 @@ use strict;
 use warnings;
 use Carp;
 use vars qw($VERSION);
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 use base qw(Tk::Derived Tk::Frame);
 
@@ -383,9 +383,6 @@ I<-textanchor>, I<-textjustify>, I<-textside>, and I<-wraplength>,
 sub Populate {
 	my ($self,$args) = @_;
 	
-	my $nofilter = delete $args->{'-nofilter'};
-	$nofilter = '' unless defined $nofilter;
-	
 	$self->SUPER::Populate($args);
 	
 	#create the canvas
@@ -431,19 +428,17 @@ sub Populate {
 	$c->Tk::bind('<Motion>', [ $self, 'Motion', Ev('x'), Ev('y') ]);
 
 	#setting up the filter
-	unless ($nofilter) {
-		my $filter = '';
-		$self->Advertise('Filter', \$filter);
-		my $fframe = $self->Frame;
-		$self->Advertise('FilterFrame', $fframe);
-		my $fentry = $fframe->FilterEntry(
-			-command => ['filterRefresh', $self],
-			-textvariable => \$filter,
-		)->pack(-side => 'left', -pady => 2, -expand => 1, -fill => 'x');
-		$self->Advertise('FilterEntry', $fentry);
-		$fentry->bind('<Control-f>', [$self, 'filterFlip']);
-		$fentry->bind('<Escape>', [$self, 'filterFlip']);
-	}
+	my $filter = '';
+	$self->Advertise('Filter', \$filter);
+	my $fframe = $self->Frame;
+	$self->Advertise('FilterFrame', $fframe);
+	my $fentry = $fframe->FilterEntry(
+		-command => ['filterRefresh', $self],
+		-textvariable => \$filter,
+	)->pack(-side => 'left', -pady => 2, -expand => 1, -fill => 'x');
+	$self->Advertise('FilterEntry', $fentry);
+	$fentry->bind('<Control-f>', [$self, 'filterFlip']);
+	$fentry->bind('<Escape>', [$self, 'filterFlip']);
 
 	$self->{ARRANGE} = undef;
 	$self->{COLUMNS} = [];
@@ -477,7 +472,8 @@ sub Populate {
 		-selectforeground => ['PASSIVE', 'selectForeground', 'SelectForeground', '#FAF9EA'],
 
 		#filter
-		-filterdelay => ['PASSIVE', 'filterDelay', 'FilterDelay', 300],
+		-nofilter => ['PASSIVE', undef, undef, ''],
+		-filterdelay => [$fentry],
 		-filterfield => ['PASSIVE', undef, undef, 'name'],
 		-filteron => ['PASSIVE', undef, undef, ''], #boolean
 
@@ -1229,27 +1225,25 @@ sub filter {
 
 sub filterFlip {
 	my $self = shift;
+	return if $self->cget('-nofilter');
+	my $e = $self->Subwidget('FilterEntry');
 	my $f = $self->Subwidget('FilterFrame');
-	return unless defined $f;
-	if (defined $f) {
-		my $e = $self->Subwidget('FilterEntry');
-		if ($f->ismapped) {
-			unless ($self->cget('-filteron')) {
-				$self->filterHide;
-				$self->CanvasFocus;
-			}
-		} else {
-			$self->filterShow;
-			$e->focus;
+	if ($f->ismapped) {
+		unless ($self->cget('-filteron')) {
+			$self->filterHide;
+			$self->CanvasFocus;
 		}
+	} else {
+		$self->filterShow;
+		$e->focus;
 	}
 }
 
 sub filterHide {
 	my $self = shift;
-	my $f = $self->Subwidget('FilterFrame');
-	return unless defined $f;
+	return if $self->cget('-nofilter');
 	my $e = $self->Subwidget('FilterEntry');
+	my $f = $self->Subwidget('FilterFrame');
 	$e->delete(0, 'end');
 	$self->filterRefresh;
 	$f->packForget;
@@ -1257,9 +1251,9 @@ sub filterHide {
 
 sub filterShow {
 	my $self = shift;
-	my $f = $self->Subwidget('FilterFrame');
-	return unless defined $f;
+	return if $self->cget('-nofilter');
 	my $e = $self->Subwidget('FilterEntry');
+	my $f = $self->Subwidget('FilterFrame');
 	$e->reset;
 	$f->pack(-fill => 'x');
 }
