@@ -1,5 +1,9 @@
 Revision history for Perl extension Tk::ListBrowser.
 
+0.07  Wed May 07 2025
+	- Fixed error in testfile.
+	- Fixed package name in Tk::ListBrowser::SelectXPM.
+
 0.06  Wed May 07 2025
 	- Fixed missing prerequisite.
 	- Fixed redirect of -filterdelay option.

@@ -432,7 +432,5 @@ push @tests, (
 		}, 0, 'indexColumnRow' ],
 );
 
-my $font = $ib->cget('-font');
-print "font $font\n";
 starttesting;
 
