@@ -1,5 +1,8 @@
 Revision history for Perl extension Tk::ListBrowser.
 
+0.09  Date 
+	- Fixed mistakes in documentation.
+
 0.08  Sun May 11 2025
 	- Selection is retained when clicking an indicator.
 	- Fixed filtering in hierarchy mode.

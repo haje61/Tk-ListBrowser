@@ -2,7 +2,7 @@ package Tk::ListBrowser::Row;
 
 =head1 NAME
 
-Tk::ListBrowser - Tk::ListBrowser::Row - Row organizer for Tk::ListBrowser.
+Tk::ListBrowser::Row - Row organizer for Tk::ListBrowser.
 
 =head1 SYNOPSIS
 
@@ -26,7 +26,7 @@ No user serviceable parts inside.
 use strict;
 use warnings;
 use vars qw($VERSION $AUTOLOAD);
-$VERSION =  0.04;
+$VERSION =  0.09;
 use Carp;
 use Math::Round;
 
