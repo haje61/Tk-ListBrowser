@@ -57,9 +57,11 @@ sub cellSize {
 	my $imagewidth = 0;
 	my $textheight = 0;
 	my $textwidth = 0;
-	my $pool = $self->data->pool;
-	for (@$pool) {
+	my @pool = $self->getPool;
+	for (@pool) {
 		my $entry = $_;
+		if ($self->hierarchy) {
+		}
 		my ($iw, $ih, $tw, $th) = $entry->minCellSize($self->cget('-itemtype'));
 		$imageheight = $ih if $ih > $imageheight;
 		$imagewidth = $iw if $iw > $imagewidth;
@@ -134,8 +136,9 @@ sub maxXY {
 	my $self = shift;
 	my $maxc = 0;
 	my $maxr = 0;
-	my $pool = $self->listbrowser->data->pool;
-	for (@$pool) {
+	my @pool = $self->getAll;
+	for (@pool) {
+		next if ($_->hidden or (not $_->openedparent));
 		my $c = $_->column;
 		$maxc = $c if ((defined $c) and ($c > $maxc));
 		my $r = $_->row;

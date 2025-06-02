@@ -61,11 +61,11 @@ sub initColumns {
 		$self->startXY($self->SUPER::startXY);
 	}
 
-	my $pool = $self->listbrowser->data->pool;
+	my @pool = $self->listbrowser->getAll;
 	my ($x, $y) = $self->startXY;
 	my $rows = 0;
-	for (@$pool) {
-		$rows ++ unless $_->hidden
+	for (@pool) {
+		$rows ++ unless ($_->hidden) or (not $_->openedparent)
 	}
 	my $maxy = $y + ($rows * ($self->cellHeight + 1));
 
